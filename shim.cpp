@@ -9,6 +9,7 @@
 #include <optional>
 #include <memory>
 #include <vector>
+#include <regex>
 
 #ifndef ERROR_ELEVATION_REQUIRED
 #define ERROR_ELEVATION_REQUIRED 740
@@ -50,11 +51,19 @@ namespace std
     typedef optional<wstring> wstring_p;
 }
 
+std::wstring GetDirectory(wchar_t* exe) {
+    std::wstring exeString(exe);
+    std::wstring::size_type pos = std::wstring(exeString).find_last_of(L"\\/");
+    return std::wstring(exeString).substr(0, pos);
+}
+
 std::tuple<std::wstring_p, std::wstring_p> GetShimInfo()
 {
     // Find filename of current executable.
     wchar_t filename[MAX_PATH + 2];
     const auto filenameSize = GetModuleFileNameW(nullptr, filename, MAX_PATH);
+
+    std::wstring dirname = GetDirectory(filename);
 
     if (filenameSize >= MAX_PATH)
     {
@@ -105,7 +114,9 @@ std::tuple<std::wstring_p, std::wstring_p> GetShimInfo()
             continue;
         }
     }
-
+    std::wstring key = std::wstring(L"%~dp0");
+    path.emplace(std::regex_replace(path.value(), std::wregex(key), dirname));
+    args.emplace(std::regex_replace(args.value(), std::wregex(key), dirname));
     return {path, args};
 }
 
