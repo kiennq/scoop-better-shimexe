@@ -54,7 +54,7 @@ namespace std
 std::wstring_view GetDirectory(std::wstring_view exe) {
     std::wstring exeString(exe);
     auto pos = exeString.find_last_of(L"\\/");
-    return std::wstring(exeString).substr(0, pos);
+    return exeString.substr(0, pos);
 }
 
 std::tuple<std::wstring_p, std::wstring_p> GetShimInfo()
