@@ -53,7 +53,7 @@ namespace std
 
 std::wstring_view GetDirectory(std::wstring_view exe) {
     std::wstring exeString(exe);
-    std::wstring::size_type pos = std::wstring(exeString).find_last_of(L"\\/");
+    auto pos = exeString.find_last_of(L"\\/");
     return std::wstring(exeString).substr(0, pos);
 }
 
