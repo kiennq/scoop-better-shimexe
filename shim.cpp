@@ -51,7 +51,7 @@ namespace std
     typedef optional<wstring> wstring_p;
 }
 
-std::wstring GetDirectory(wchar_t* exe) {
+std::wstring_view GetDirectory(std::wstring_view exe) {
     std::wstring exeString(exe);
     std::wstring::size_type pos = std::wstring(exeString).find_last_of(L"\\/");
     return std::wstring(exeString).substr(0, pos);
