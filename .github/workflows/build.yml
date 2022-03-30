@@ -22,9 +22,11 @@ jobs:
           release: false
           install: >-
             zip
-            clang
-            base-devel
             automake
+      - run:
+          choco install llvm
+          where.exe clang++
+        shell: pwsh
 
       - uses: actions/checkout@v2
 
