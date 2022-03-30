@@ -13,7 +13,7 @@ jobs:
     runs-on: windows-latest
     defaults:
       run:
-        shell: msys2 {0}
+        shell: msys2_shell.cmd -use-full-path {0}
 
     steps:
       - uses: msys2/setup-msys2@v2
@@ -46,15 +46,13 @@ jobs:
           echo "prerelease=$prerelease" >> $GITHUB_ENV
 
       - name: Build
-        run: |
-          PATH=$PATH:/c/Program\ Files/LLVM/bin/
-          make zip
+        run: make zip
 
       - name: Create release
         uses: ncipollo/release-action@v1
         with:
           tag: v${{ env.version }}
-          name: shimexe_${{ env.version }}
+          name: ${{ env.version }}
           draft: false
           prerelease: ${{ env.prerelease }}
           artifactErrorsFailBuild: true
