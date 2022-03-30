@@ -124,6 +124,8 @@ std::tuple<std::unique_handle, std::unique_handle> MakeProcess(const std::wstrin
     std::unique_handle threadHandle;
     std::unique_handle processHandle;
 
+    GetStartupInfoW(&si);
+
     if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_SUSPENDED, nullptr, nullptr, &si, &pi))
     {
         threadHandle.reset(pi.hThread);
