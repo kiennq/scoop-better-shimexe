@@ -1,4 +1,4 @@
-CC=g++.exe
+CC=clang++.exe
 CFLAGS=-std=c++17 -m32
 
 ODIR = obj
@@ -27,6 +27,7 @@ $(BDIR):
 
 clean:
 	rm -f $(ODIR)/*.*
+	rm -f $(BDIR)/*.*
 
 debug: $(OBJS) | $(BDIR)
 	$(CC) -o $(BDIR)/shim.exe $^ $(CFLAGS) -g
