@@ -11,9 +11,11 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      MSYS2_PATH_TYPE: inherit
     defaults:
       run:
-        shell: msys2_shell.cmd -use-full-path {0}
+        shell: msys2 {0}
 
     steps:
       - uses: msys2/setup-msys2@v2
@@ -22,7 +24,7 @@ jobs:
           release: false
           install: >-
             zip
-            base-devel
+            make
 
       - uses: actions/checkout@v2
 
