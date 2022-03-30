@@ -22,11 +22,7 @@ jobs:
           release: false
           install: >-
             zip
-            automake
-      - run: |
-          choco install llvm
-          where.exe clang++
-        shell: pwsh
+            base-devel
 
       - uses: actions/checkout@v2
 
@@ -50,7 +46,9 @@ jobs:
           echo "prerelease=$prerelease" >> $GITHUB_ENV
 
       - name: Build
-        run: make zip
+        run: |
+          PATH=$PATH:/c/Program\ Files/LLVM/bin/
+          make zip
 
       - name: Create release
         uses: ncipollo/release-action@v1
