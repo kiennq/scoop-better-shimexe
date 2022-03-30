@@ -23,7 +23,7 @@ jobs:
           install: >-
             zip
             automake
-      - run:
+      - run: |
           choco install llvm
           where.exe clang++
         shell: pwsh
