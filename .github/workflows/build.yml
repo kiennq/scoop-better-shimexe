@@ -20,6 +20,10 @@ jobs:
         with:
           update: false
           release: false
+          install: >-
+            zip
+            base-devel
+            automake
 
       - uses: actions/checkout@v2
 
