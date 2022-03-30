@@ -34,7 +34,7 @@ jobs:
       - name: Get version
         run: |
           tag=${GITHUB_REF#refs/tags/*}
-          sha=$(git rev-parse --short HEAD)
+          sha=${GITHUB_SHA::7}
           version=$([[ $tag == v* ]] && echo ${tag:1} || echo 3.0.$sha)
           cur_ver=$([[ ${{ steps.cur_release.outcome }} == failure ]] && echo v0 || echo ${{ steps.cur_release.outputs.release }})
           [[ v$version == $cur_ver ]] && exit 1
