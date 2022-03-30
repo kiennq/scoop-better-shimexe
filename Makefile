@@ -1,4 +1,4 @@
-CC=clang++.exe
+CC=g++.exe
 CFLAGS=-std=c++17 -m32
 
 ODIR = obj
