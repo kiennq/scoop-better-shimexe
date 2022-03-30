@@ -1,0 +1,58 @@
+name: Build
+
+on:
+  schedule:
+    - cron: "0 0 * * 0" # weekly
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v**'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: msys2/setup-msys2@v2
+        with:
+          update: false
+          release: false
+
+      - uses: actions/checkout@v2
+
+      - name: Get latest release
+        continue-on-error: true
+        id: cur_release
+        uses: pozetroninc/github-action-get-latest-release@master
+        with:
+          repository: ${{ github.repository }}
+          excludes: draft
+
+      - name: Get version
+        run: |
+          tag=${GITHUB_REF#refs/tags/*}
+          sha=$(git rev-parse --short HEAD)
+          version=$([[ $tag == v* ]] && echo ${tag:1} || echo 3.0.$sha)
+          cur_ver=$([[ ${{ steps.cur_release.outcome }} == failure ]] && echo v0 || echo ${{ steps.cur_release.outputs.release }})
+          [[ v$version == $cur_ver ]] && exit 1
+          prerelease=$([[ $tag == v* ]] && echo false || echo true)
+          echo "version=$version" >> $GITHUB_ENV
+          echo "prerelease=$prerelease" >> $GITHUB_ENV
+
+      - name: Build
+        run: make zip
+
+      - name: Create release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: v${{ env.version }}
+          name: shimexe_${{ env.version }}
+          draft: false
+          prerelease: ${{ env.prerelease }}
+          artifactErrorsFailBuild: true
+          artifact: archive/shimexe.zip
+          artifactContentType: application/zip
+          token: ${{ secrets.GITHUB_TOKEN }}
