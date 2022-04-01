@@ -24,8 +24,8 @@ jobs:
           release: false
           install: >-
             zip
+            ninja
       - uses: actions/checkout@v2
-      - uses: seanmiddleditch/gha-setup-ninja@master
 
       - name: Get latest release
         continue-on-error: true
