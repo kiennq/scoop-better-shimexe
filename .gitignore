@@ -8,3 +8,5 @@ checksum.sha*
 obj/
 bin/
 archive/
+build/**
+!build/*.ninja

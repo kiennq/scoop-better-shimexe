@@ -1,0 +1,28 @@
+cc = clang++.exe
+cflags = -std=c++17 -m32
+
+rule cc
+  command = $cc -c -o $out $in $cflags -Ofast -g
+
+rule link
+  command = $cc -o $out $in $cflags -Ofast -static
+
+rule mkdir
+  command = mkdir -p $in
+
+rule sha256sum
+  command = sha256sum $in > $out
+
+rule sha512sum
+  command = sha512sum $in > $out
+
+rule zip
+  command = zip -j -9 $out $in
+
+build shim.o: cc ../shim.cpp
+build shim.exe: link shim.o
+build checksum.sha256: sha256sum shim.exe
+build checksum.sha512: sha512sum shim.exe
+build shimexe.zip: zip shim.exe checksum.sha256 checksum.sha512
+
+default shimexe.zip

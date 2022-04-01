@@ -1,4 +1,4 @@
-name: Build
+name: Release
 
 on:
   schedule:
@@ -24,9 +24,8 @@ jobs:
           release: false
           install: >-
             zip
-            make
-
       - uses: actions/checkout@v2
+      - uses: seanmiddleditch/gha-setup-ninja@master
 
       - name: Get latest release
         continue-on-error: true
@@ -48,7 +47,7 @@ jobs:
           echo "prerelease=$prerelease" >> $GITHUB_ENV
 
       - name: Build
-        run: make zip
+        run: ninja -C build
 
       - name: Create release
         uses: ncipollo/release-action@v1
@@ -58,6 +57,6 @@ jobs:
           draft: false
           prerelease: ${{ env.prerelease }}
           artifactErrorsFailBuild: true
-          artifacts: archive/shimexe.zip
+          artifacts: build/shimexe.zip
           artifactContentType: application/zip
           token: ${{ secrets.GITHUB_TOKEN }}
