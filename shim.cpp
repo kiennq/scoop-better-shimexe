@@ -216,12 +216,11 @@ int wmain(int argc, wchar_t* argv[])
 
     // Find out if the target program is a console app
 
-    wchar_t *char_buf = new wchar_t[path->length() + 1];
-    std::memcpy(char_buf, path->c_str(), (path->length() + 1) * sizeof(*char_buf));
-    PathUnquoteSpacesW(char_buf);
+    wchar_t unquotedPath[MAX_PATH] = {};
+    wmemcpy(unquotedPath, path->c_str(), path->length());
+    PathUnquoteSpacesW(unquotedPath);
     SHFILEINFOW sfi = {};
-    const auto ret = SHGetFileInfoW(char_buf, -1, &sfi, sizeof(sfi), SHGFI_EXETYPE);
-    delete[] char_buf;
+    const auto ret = SHGetFileInfoW(unquotedPath, -1, &sfi, sizeof(sfi), SHGFI_EXETYPE);
 
     if (ret == 0)
     {
