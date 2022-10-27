@@ -60,7 +60,7 @@ std::tuple<std::wstring_p, std::wstring_p> GetShimInfo()
 
     if (filenameSize >= MAX_PATH)
     {
-        fprintf(stderr, "The filename of the program is too long to handle.\n");
+        fprintf(stderr, "Shim: The filename of the program is too long to handle.\n");
         return {std::nullopt, std::nullopt};
     }
 
@@ -167,7 +167,7 @@ std::tuple<std::unique_handle, std::unique_handle> MakeProcess(const std::wstrin
 
             if (!ShellExecuteExW(&sei))
             {
-                fprintf(stderr, "Unable to create elevated process: error %li.", GetLastError());
+                fprintf(stderr, "Shim: Unable to create elevated process: error %li.", GetLastError());
                 return {std::move(processHandle), std::move(threadHandle)};
             }
 
@@ -175,7 +175,7 @@ std::tuple<std::unique_handle, std::unique_handle> MakeProcess(const std::wstrin
         }
         else
         {
-            fprintf(stderr, "Could not create process with command '%ls'.\n", cmd.data());
+            fprintf(stderr, "Shim: Could not create process with command '%ls'.\n", cmd.data());
             return {std::move(processHandle), std::move(threadHandle)};
         }
     }
@@ -183,7 +183,7 @@ std::tuple<std::unique_handle, std::unique_handle> MakeProcess(const std::wstrin
     // Ignore Ctrl-C and other signals
     if (!SetConsoleCtrlHandler(CtrlHandler, TRUE))
     {
-        fprintf(stderr, "Could not set control handler; Ctrl-C behavior may be invalid.\n");
+        fprintf(stderr, "Shim: Could not set control handler; Ctrl-C behavior may be invalid.\n");
     }
 
     return {std::move(processHandle), std::move(threadHandle)};
@@ -224,7 +224,7 @@ int wmain(int argc, wchar_t* argv[])
 
     if (ret == 0)
     {
-        fprintf(stderr, "Could not determine if target is a GUI app. Assuming console.\n");
+        fprintf(stderr, "Shim: Could not determine if target is a GUI app. Assuming console.\n");
     }
 
     const auto isWindowsApp = HIWORD(ret) != 0;
