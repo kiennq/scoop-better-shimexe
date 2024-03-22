@@ -5,8 +5,8 @@ on:
     - cron: "0 0 * * 0" # weekly
   workflow_dispatch:
   push:
-    tags:
-      - 'v**'
+    paths:
+      - 'version'
 
 jobs:
   build:
@@ -37,9 +37,9 @@ jobs:
 
       - name: Get version
         run: |
-          tag=${GITHUB_REF#refs/tags/*}
+          base_ver=$(cat version)
           sha=${GITHUB_SHA::7}
-          version=$([[ $tag == v* ]] && echo ${tag:1} || echo 3.0.$sha)
+          version=$([ ! -z "${{ github.event.schedule }}" ] && echo ${base_ver} || echo ${base_ver}.$sha)
           cur_ver=$([[ ${{ steps.cur_release.outcome }} == failure ]] && echo v0 || echo ${{ steps.cur_release.outputs.release }})
           [[ v$version == $cur_ver ]] && exit 1
           prerelease=$([[ $tag == v* ]] && echo false || echo true)
