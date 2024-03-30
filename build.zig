@@ -16,7 +16,7 @@ pub fn build(b: *std.Build) void {
         .abi = .gnu,
     } });
 
-    if (!(target.result.os.tag == .windows)) {
+    if (target.result.os.tag != .windows) {
         std.log.err("Non-Windows target is not supported", .{});
         return;
     }
@@ -36,6 +36,7 @@ pub fn build(b: *std.Build) void {
     } else {
         exe.linkLibCpp();
         exe.subsystem = .Windows;
+        // NOTE: This requires a recent Zig version (0.12.0-dev.3493+3661133f9 or later)
         exe.mingw_unicode_entry_point = true;
     }
 
