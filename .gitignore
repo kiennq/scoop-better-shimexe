@@ -10,3 +10,5 @@ bin/
 archive/
 build/**
 !build/*.ninja
+zig-cache/
+zig-out/
