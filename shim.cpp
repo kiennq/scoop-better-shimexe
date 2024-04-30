@@ -121,32 +121,35 @@ ShimInfo GetShimInfo()
 
         std::wstring_view line(linebuf);
 
-        if ((line.size() < 7) || (line.substr(4, 3) != L" = "))
+        auto pos = line.find(L" = ");
+        if (pos == std::wstring_view::npos)
         {
             continue;
         }
 
-        if (line.substr(0, 4) == L"path")
+        std::wstring_view name = line.substr(0, pos);
+        std::wstring_view value = line.substr(pos + 3, line.size() - pos - 3 - (line.back() == L'\n' ? 1 : 0));
+
+        if (name == L"path")
         {
-            std::wstring_view line_substr = line.substr(7);
-            if (line_substr.find(L" ") != std::wstring_view::npos && line_substr.front() != L'"')
+            if (value.find(L" ") != std::wstring_view::npos && value.front() != L'"')
             {
                 path.emplace(L"\"");
                 auto& path_value = path.value();
-                path_value.append(line_substr.data(), line_substr.size() - (line.back() == L'\n' ? 1 : 0));
+                path_value.append(value);
                 path_value.push_back(L'"');
             }
             else
             {
-                path.emplace(line_substr.data(), line_substr.size() - (line.back() == L'\n' ? 1 : 0));
+                path.emplace(value);
             }
 
             continue;
         }
 
-        if (line.substr(0, 4) == L"args")
+        if (name == L"args")
         {
-            args.emplace(line.data() + 7, line.size() - 7 - (line.back() == L'\n' ? 1 : 0));
+            args.emplace(value);
             continue;
         }
     }
