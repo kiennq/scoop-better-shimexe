@@ -52,12 +52,14 @@ namespace std
 {
     typedef unique_ptr<HANDLE, HandleDeleter> unique_handle;
     typedef optional<wstring> wstring_p;
+    typedef std::vector<std::tuple<std::wstring, std::wstring>> wstring_map;
 }
 
 struct ShimInfo
 {
     std::wstring_p path;
     std::wstring_p args;
+    std::wstring_map vars;
 };
 
 std::wstring_view GetDirectory(std::wstring_view exe)
@@ -112,6 +114,7 @@ ShimInfo GetShimInfo()
     wchar_t linebuf[1<<14];
     std::wstring_p path;
     std::wstring_p args;
+    std::wstring_map vars;
     while (true)
     {
         if (!fgetws(linebuf, ARRAYSIZE(linebuf), shimFile.get()))
@@ -152,9 +155,15 @@ ShimInfo GetShimInfo()
             args.emplace(value);
             continue;
         }
+
+        if (!name.empty())
+        {
+            vars.emplace_back(name, value);
+            continue;
+        }
     }
 
-    return {path, NormalizeArgs(args, GetDirectory(filename))};
+    return {path, NormalizeArgs(args, GetDirectory(filename)), vars};
 }
 
 std::tuple<std::unique_handle, std::unique_handle> MakeProcess(ShimInfo const& info)
@@ -163,12 +172,20 @@ std::tuple<std::unique_handle, std::unique_handle> MakeProcess(ShimInfo const& i
     STARTUPINFOW si = {};
     PROCESS_INFORMATION pi = {};
 
-    auto&& [path, args] = info;
+    auto&& [path, args, vars] = info;
     std::vector<wchar_t> cmd(path->size() + args->size() + 2);
     wmemcpy(cmd.data(), path->c_str(), path->size());
     cmd[path->size()] = L' ';
     wmemcpy(cmd.data() + path->size() + 1, args->c_str(), args->size());
     cmd[path->size() + 1 + args->size()] = L'\0';
+
+    for (auto& [name, value] : vars)
+    {
+        if (_wputenv_s(name.c_str(), value.c_str()))
+        {
+            fprintf(stderr, "Shim: Could not set environment variable '%ls' to '%ls'.\n", name.c_str(), value.c_str());
+        }
+    }
 
     std::unique_handle threadHandle;
     std::unique_handle processHandle;
@@ -226,7 +243,7 @@ std::tuple<std::unique_handle, std::unique_handle> MakeProcess(ShimInfo const& i
 
 int wmain(int argc, wchar_t* argv[])
 {
-    auto [path, args] = GetShimInfo();
+    auto [path, args, vars] = GetShimInfo();
 
     if (!path)
     {
@@ -279,7 +296,7 @@ int wmain(int argc, wchar_t* argv[])
     jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
     SetInformationJobObject(jobHandle.get(), JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
 
-    auto [processHandle, threadHandle] = MakeProcess({path, args});
+    auto [processHandle, threadHandle] = MakeProcess({path, args, vars});
     if (processHandle && !isWindowsApp)
     {
         AssignProcessToJobObject(jobHandle.get(), processHandle.get());
