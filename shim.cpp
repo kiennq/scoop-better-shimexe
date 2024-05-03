@@ -52,12 +52,14 @@ namespace std
 {
     typedef unique_ptr<HANDLE, HandleDeleter> unique_handle;
     typedef optional<wstring> wstring_p;
+    typedef std::vector<std::tuple<std::wstring, std::wstring>> wstring_map;
 }
 
 struct ShimInfo
 {
     std::wstring_p path;
     std::wstring_p args;
+    std::wstring_map vars;
 };
 
 std::wstring_view GetDirectory(std::wstring_view exe)
@@ -81,6 +83,51 @@ std::wstring_p NormalizeArgs(std::wstring_p& args, std::wstring_view curDir)
     }
 
     return args;
+}
+
+std::wstring GetVariableValue(std::wstring const& name)
+{
+    wchar_t* buf = nullptr;
+    if (_wdupenv_s(&buf, nullptr, name.c_str()) || !buf)
+    {
+        return L"";
+    }
+
+    std::wstring value(buf);
+    free(buf);
+
+    return value;
+}
+
+std::wstring NormalizeVariable(std::wstring_view var)
+{
+    static constexpr auto s_startDelim = L"%"sv;
+    static constexpr auto s_endDelim = L"%"sv;
+
+    std::wstring str(var);
+
+    for (std::wstring::size_type searchPos = 0; searchPos < str.size();)
+    {
+        auto startPos = str.find(s_startDelim, searchPos);
+        if (startPos == std::wstring::npos || startPos + s_startDelim.size() >= str.size())
+        {
+            break;
+        }
+
+        auto endPos = str.find(s_endDelim, startPos + s_startDelim.size());
+        if (endPos == std::wstring::npos)
+        {
+            break;
+        }
+
+        std::wstring name = str.substr(startPos + s_startDelim.size(), endPos - startPos - s_startDelim.size());
+        std::wstring value = GetVariableValue(name);
+        str.replace(startPos, endPos + s_endDelim.size() - startPos, value);
+
+        searchPos = startPos + value.size();
+    }
+
+    return str;
 }
 
 ShimInfo GetShimInfo()
@@ -112,6 +159,7 @@ ShimInfo GetShimInfo()
     wchar_t linebuf[1<<14];
     std::wstring_p path;
     std::wstring_p args;
+    std::wstring_map vars;
     while (true)
     {
         if (!fgetws(linebuf, ARRAYSIZE(linebuf), shimFile.get()))
@@ -121,37 +169,46 @@ ShimInfo GetShimInfo()
 
         std::wstring_view line(linebuf);
 
-        if ((line.size() < 7) || (line.substr(4, 3) != L" = "))
+        auto pos = line.find(L" = ");
+        if (pos == std::wstring_view::npos)
         {
             continue;
         }
 
-        if (line.substr(0, 4) == L"path")
+        std::wstring_view name = line.substr(0, pos);
+        std::wstring_view value = line.substr(pos + 3, line.size() - pos - 3 - (line.back() == L'\n' ? 1 : 0));
+
+        if (name == L"path")
         {
-            std::wstring_view line_substr = line.substr(7);
-            if (line_substr.find(L" ") != std::wstring_view::npos && line_substr.front() != L'"')
+            if (value.find(L" ") != std::wstring_view::npos && value.front() != L'"')
             {
                 path.emplace(L"\"");
                 auto& path_value = path.value();
-                path_value.append(line_substr.data(), line_substr.size() - (line.back() == L'\n' ? 1 : 0));
+                path_value.append(value);
                 path_value.push_back(L'"');
             }
             else
             {
-                path.emplace(line_substr.data(), line_substr.size() - (line.back() == L'\n' ? 1 : 0));
+                path.emplace(value);
             }
 
             continue;
         }
 
-        if (line.substr(0, 4) == L"args")
+        if (name == L"args")
         {
-            args.emplace(line.data() + 7, line.size() - 7 - (line.back() == L'\n' ? 1 : 0));
+            args.emplace(value);
+            continue;
+        }
+
+        if (!name.empty())
+        {
+            vars.emplace_back(name, NormalizeVariable(value));
             continue;
         }
     }
 
-    return {path, NormalizeArgs(args, GetDirectory(filename))};
+    return {path, NormalizeArgs(args, GetDirectory(filename)), vars};
 }
 
 std::tuple<std::unique_handle, std::unique_handle> MakeProcess(ShimInfo const& info)
@@ -160,12 +217,20 @@ std::tuple<std::unique_handle, std::unique_handle> MakeProcess(ShimInfo const& i
     STARTUPINFOW si = {};
     PROCESS_INFORMATION pi = {};
 
-    auto&& [path, args] = info;
+    auto&& [path, args, vars] = info;
     std::vector<wchar_t> cmd(path->size() + args->size() + 2);
     wmemcpy(cmd.data(), path->c_str(), path->size());
     cmd[path->size()] = L' ';
     wmemcpy(cmd.data() + path->size() + 1, args->c_str(), args->size());
     cmd[path->size() + 1 + args->size()] = L'\0';
+
+    for (auto& [name, value] : vars)
+    {
+        if (_wputenv_s(name.c_str(), value.c_str()))
+        {
+            fprintf(stderr, "Shim: Could not set environment variable '%ls' to '%ls'.\n", name.c_str(), value.c_str());
+        }
+    }
 
     std::unique_handle threadHandle;
     std::unique_handle processHandle;
@@ -223,7 +288,7 @@ std::tuple<std::unique_handle, std::unique_handle> MakeProcess(ShimInfo const& i
 
 int wmain(int argc, wchar_t* argv[])
 {
-    auto [path, args] = GetShimInfo();
+    auto [path, args, vars] = GetShimInfo();
 
     if (!path)
     {
@@ -276,7 +341,7 @@ int wmain(int argc, wchar_t* argv[])
     jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
     SetInformationJobObject(jobHandle.get(), JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
 
-    auto [processHandle, threadHandle] = MakeProcess({path, args});
+    auto [processHandle, threadHandle] = MakeProcess({path, args, vars});
     if (processHandle && !isWindowsApp)
     {
         AssignProcessToJobObject(jobHandle.get(), processHandle.get());
