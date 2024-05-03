@@ -85,6 +85,51 @@ std::wstring_p NormalizeArgs(std::wstring_p& args, std::wstring_view curDir)
     return args;
 }
 
+std::wstring GetVariableValue(std::wstring const& name)
+{
+    wchar_t* buf = nullptr;
+    if (_wdupenv_s(&buf, nullptr, name.c_str()) || !buf)
+    {
+        return L"";
+    }
+
+    std::wstring value(buf);
+    free(buf);
+
+    return value;
+}
+
+std::wstring NormalizeVariable(std::wstring_view var)
+{
+    static constexpr auto s_startDelim = L"%"sv;
+    static constexpr auto s_endDelim = L"%"sv;
+
+    std::wstring str(var);
+
+    for (std::wstring::size_type searchPos = 0; searchPos < str.size();)
+    {
+        auto startPos = str.find(s_startDelim, searchPos);
+        if (startPos == std::wstring::npos || startPos + s_startDelim.size() >= str.size())
+        {
+            break;
+        }
+
+        auto endPos = str.find(s_endDelim, startPos + s_startDelim.size());
+        if (endPos == std::wstring::npos)
+        {
+            break;
+        }
+
+        std::wstring name = str.substr(startPos + s_startDelim.size(), endPos - startPos - s_startDelim.size());
+        std::wstring value = GetVariableValue(name);
+        str.replace(startPos, endPos + s_endDelim.size() - startPos, value);
+
+        searchPos = startPos + value.size();
+    }
+
+    return str;
+}
+
 ShimInfo GetShimInfo()
 {
     // Find filename of current executable.
@@ -158,7 +203,7 @@ ShimInfo GetShimInfo()
 
         if (!name.empty())
         {
-            vars.emplace_back(name, value);
+            vars.emplace_back(name, NormalizeVariable(value));
             continue;
         }
     }
