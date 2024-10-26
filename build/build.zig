@@ -1,5 +1,6 @@
+const builtin = @import("builtin");
 const std = @import("std");
-const CrossTarget = std.zig.CrossTarget;
+const CrossTarget = std.Target.Query;
 
 // Usage:
 //   zig build -Dtarget=<target> -Doptimize=<optimization level>
@@ -9,7 +10,15 @@ const CrossTarget = std.zig.CrossTarget;
 //   aarch64-windows-gnu
 //   aarch64-windows-msvc
 
+const required_version = std.SemanticVersion.parse("0.13.0") catch unreachable;
+const compatible = builtin.zig_version.order(required_version) == .gt;
+
 pub fn build(b: *std.Build) void {
+    if (!compatible) {
+        std.log.err("Unsupported Zig compiler version", .{});
+        return;
+    }
+
     const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{ .default_target = CrossTarget{
         .os_tag = .windows,
@@ -25,10 +34,10 @@ pub fn build(b: *std.Build) void {
         .name = "shim",
         .target = target,
         .optimize = optimize,
-        .win32_manifest = .{ .path = "shim.manifest" },
+        .win32_manifest = b.path("../shim.manifest"),
     });
 
-    exe.addCSourceFile(.{ .file = .{ .path = "shim.cpp" }, .flags = &.{"-std=c++20"} });
+    exe.addCSourceFile(.{ .file = b.path("../shim.cpp"), .flags = &.{"-std=c++20"} });
     exe.linkSystemLibrary("shlwapi");
 
     if (target.result.abi == .msvc) {
