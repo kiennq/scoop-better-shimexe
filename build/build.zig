@@ -5,6 +5,8 @@ const CrossTarget = std.Target.Query;
 // Usage:
 //   zig build -Dtarget=<target> -Doptimize=<optimization level>
 // Supported targets:
+//   x86-windows-gnu
+//   x86-windows-msvc
 //   x86_64-windows-gnu
 //   x86_64-windows-msvc
 //   aarch64-windows-gnu
