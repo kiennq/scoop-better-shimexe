@@ -1,4 +1,6 @@
-#include <corecrt.h>
+#ifdef _MSC_VER
+#include <corecrt_wstdio.h>
+#endif
 #pragma comment(lib, "SHELL32.LIB")
 #pragma comment(lib, "SHLWAPI.LIB")
 #include <windows.h>
