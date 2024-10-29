@@ -3,7 +3,7 @@
 
 <#
 .SYNOPSIS
-    Build script
+    Build shim.exe using Zig.
 .PARAMETER BuildMode
     The build mode. Valid values are Debug, ReleaseSafe, ReleaseFast, ReleaseSmall
     Default is ReleaseSmall
@@ -11,7 +11,7 @@
     The target architecture. Valid values are x86-windows-gnu, x86_64-windows-gnu, aarch64-windows-gnu
     Default is undefined (all valid targets)
 .PARAMETER Zip
-    Generate checksums and package the artifacts into a zip file
+    Generate checksums and pack the artifacts into a zip file for distribution
 #>
 param(
     [ValidateSet('Debug', 'ReleaseSafe', 'ReleaseFast', 'ReleaseSmall')]
