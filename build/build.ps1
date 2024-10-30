@@ -36,7 +36,7 @@ Push-Location $PSScriptRoot
 if (-not $Target -or $Target -eq 'x86-windows-gnu') {
     Write-Host "Build shim.exe for x86-windows-gnu target..." -ForegroundColor Cyan
     Start-Process -FilePath "zig" -ArgumentList "build -Dtarget=x86-windows-gnu -Doptimize=$BuildMode" -Wait -NoNewWindow
-    Rename-Item -Path "$PSScriptRoot\zig-out\bin\shim.exe" -NewName "$PSScriptRoot\zig-out\bin\shim-i386.exe"
+    Rename-Item -Path "$PSScriptRoot\zig-out\bin\shim.exe" -NewName "$PSScriptRoot\zig-out\bin\shim-ia32.exe"
 }
 
 if (-not $Target -or $Target -eq 'x86_64-windows-gnu') {
@@ -54,12 +54,12 @@ if (-not $Target -or $Target -eq 'aarch64-windows-gnu') {
 if ($Zip) {
     Write-Host "Generate checksums..." -ForegroundColor Cyan
 
-    # shim-i386.exe
+    # shim-ia32.exe
     if (-not $Target -or $Target -eq 'x86-windows-gnu') {
-        $sha256 = (Get-FileHash "$PSScriptRoot\zig-out\bin\shim-i386.exe" -Algorithm SHA256).Hash.ToLower()
-        "$sha256 shim-i386.exe" | Out-File "$PSScriptRoot\zig-out\bin\shim-i386.exe.sha256"
-        $sha512 = (Get-FileHash "$PSScriptRoot\zig-out\bin\shim-i386.exe" -Algorithm SHA512).Hash.ToLower()
-        "$sha512 shim-i386.exe" | Out-File "$PSScriptRoot\zig-out\bin\shim-i386.exe.sha512"
+        $sha256 = (Get-FileHash "$PSScriptRoot\zig-out\bin\shim-ia32.exe" -Algorithm SHA256).Hash.ToLower()
+        "$sha256 shim-ia32.exe" | Out-File "$PSScriptRoot\zig-out\bin\shim-ia32.exe.sha256"
+        $sha512 = (Get-FileHash "$PSScriptRoot\zig-out\bin\shim-ia32.exe" -Algorithm SHA512).Hash.ToLower()
+        "$sha512 shim-ia32.exe" | Out-File "$PSScriptRoot\zig-out\bin\shim-ia32.exe.sha512"
     }
 
     # shim-amd64.exe
