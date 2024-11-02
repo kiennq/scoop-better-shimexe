@@ -279,7 +279,7 @@ int wmain(int argc, wchar_t* argv[])
     SetInformationJobObject(jobHandle.get(), JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
 
     auto [processHandle, threadHandle] = MakeProcess({path, args});
-    if (processHandle && !isWindowsApp)
+    if (processHandle)
     {
         AssignProcessToJobObject(jobHandle.get(), processHandle.get());
 
