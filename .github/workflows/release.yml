@@ -5,6 +5,8 @@ on:
     - cron: "0 0 * * 0" # weekly
   workflow_dispatch:
   push:
+    branches:
+      - main
     paths:
       - 'version'
 
