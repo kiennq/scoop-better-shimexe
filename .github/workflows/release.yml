@@ -39,7 +39,7 @@ jobs:
         run: |
           base_ver=$(cat version)
           sha=${GITHUB_SHA::7}
-          version=$([ -z "${{ github.event.schedule }}" ] && echo ${base_ver} || echo ${base_ver}.$sha)
+          version=$([[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch"  ]] && echo ${base_ver} || echo ${base_ver}.$sha)
           cur_ver=$([[ ${{ steps.cur_release.outcome }} == failure ]] && echo v0 || echo ${{ steps.cur_release.outputs.release }})
           [[ v$version == $cur_ver ]] && exit 1
           prerelease=$([ -z "${{ github.event.schedule }}" ] && echo false || echo true)
