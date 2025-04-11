@@ -8,9 +8,65 @@ checksum.sha*
 obj/
 bin/
 archive/
-build/**
-!build/*.ninja
-!build/build.ps1
-!build/build.zig
+out/
 .zig-cache/
 zig-out/
+.vscode/
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.o
+checksum.sha*
+obj/
+bin/
+archive/
+out/
+.zig-cache/
+zig-out/
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio cache/options directory
+.vs/
+
+# Visual C++ cache files
+ipch/
+*.aps
+*.ncb
+*.opendb
+*.opensdf
+*.sdf
+*.cachefile
+*.VC.db
+*.VC.VC.opendb
+
+# Visual Studio profiler
+*.psess
+*.vsp
+*.vspx
+*.sap
+
+# Visual Studio Trace Files
+*.e2e

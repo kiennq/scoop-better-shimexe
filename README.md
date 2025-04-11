@@ -23,8 +23,11 @@ and having never been fixed, I set out to improve them with this repository.
 
 ## Installation
 
-- In a Visual Studio command prompt, run `cl /O1 shim.c`.
-- Or using `clang++` with `clang++ shim.cpp -o shim.exe -m32 -O -std=c++17 -g`.
+- Building:
+  - Build by `clang++`: `Makefile` is supported
+  - Build by using `ninja`: `ninja -C build shim.exe`
+  - Build by using `msbuild`: `msbuild /p:Configuration=Release .\build\shim.vcxproj`
+
 - Replace any `.exe` in `scoop\shims` by `shim.exe`.
 
 An additional script, `repshims.bat`, is provided. It will replace all `.exe`s in the user's Scoop directory
