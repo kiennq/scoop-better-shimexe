@@ -5,22 +5,40 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: windows-latest
-    env:
-      MSYS2_PATH_TYPE: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86
+            target: x86-windows-gnu
+            can_run: true
+          - arch: arm64
+            target: aarch64-windows-gnu
+            can_run: false
     defaults:
       run:
         shell: pwsh
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: msys2/setup-msys2@v2
-        with:
-          update: false
-          release: false
-          install: >-
-            ninja
+      - uses: actions/checkout@v4
 
-      - name: Build
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.0
+
+      - name: Build (${{ matrix.arch }})
+        working-directory: build
+        run: zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSmall
+
+      - name: Verify artifact exists
         run: |
-          .github/scripts/setenv.ps1
-          ninja -C build shim.exe
+          if (-not (Test-Path build/zig-out/bin/shim.exe)) {
+            Write-Error "shim.exe not found"
+            exit 1
+          }
+          Get-Item build/zig-out/bin/shim.exe
+
+      - name: Run tests (${{ matrix.arch }})
+        if: matrix.can_run
+        run: ./test/run-tests.ps1 -ShimExe build/zig-out/bin/shim.exe
