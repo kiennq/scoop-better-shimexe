@@ -62,10 +62,10 @@ jobs:
       matrix:
         include:
           - arch: x86
-            target: x86-windows-gnu
+            target: x86-windows-msvc
             exe_name: shim-ia32.exe
           - arch: arm64
-            target: aarch64-windows-gnu
+            target: aarch64-windows-msvc
             exe_name: shim-aarch64.exe
     defaults:
       run:
