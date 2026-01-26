@@ -1,17 +1,20 @@
 cc = clang++.exe
-cflags = -std=c++20 -m32
 
-rule cc
-  command = $cc -c -o $out $in $cflags -O2 -g
+# C++20 with standard optimizations
+cflags_common = -std=c++20 -O2 -DNDEBUG
+cflags_x86 = $cflags_common -m32
 
-rule link
-  command = $cc -o $out $cflags -O2 -static -Wl,/manifest:embed -Wl,/manifestinput:$in
+# Linker flags
+lflags_common = -static -fuse-ld=lld
+
+rule cc_x86
+  command = $cc -c -o $out $in $cflags_x86
+
+rule link_x86
+  command = $cc -o $out $in $cflags_x86 $lflags_common -Wl,/manifest:embed -Wl,/manifestinput:$manifest
 
 rule link-debug
-  command = $cc -o $out $cflags -O2 -static -fuse-ld=lld -g -Wl,/manifest:embed -Wl,/manifestinput:$in
-
-rule mkdir
-  command = mkdir -p $in
+  command = $cc -o $out $in $cflags_x86 -O2 -static -fuse-ld=lld -g -Wl,/manifest:embed -Wl,/manifestinput:$manifest
 
 rule sha256sum
   command = sha256sum $in > $out
@@ -22,9 +25,13 @@ rule sha512sum
 rule zip
   command = zip -j -9 $out $in
 
-build shim.o: cc ../shim.cpp
-build shim.exe: link ../shim.manifest shim.o
-build shimd.exe: link-debug ../shim.manifest shim.o
+# x86 (32-bit) build
+# For ARM64 builds, use `zig build -Dtarget=aarch64-windows-gnu` in the build directory
+build shim.o: cc_x86 ../shim.cpp
+build shim.exe: link_x86 shim.o
+  manifest = ../shim.manifest
+build shimd.exe: link-debug shim.o
+  manifest = ../shim.manifest
 build checksum.sha256: sha256sum shim.exe
 build checksum.sha512: sha512sum shim.exe
 build shimexe.zip: zip shim.exe checksum.sha256 checksum.sha512

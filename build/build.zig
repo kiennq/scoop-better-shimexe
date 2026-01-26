@@ -41,6 +41,7 @@ pub fn build(b: *std.Build) void {
 
     exe.addCSourceFile(.{ .file = b.path("../shim.cpp"), .flags = &.{"-std=c++20"} });
     exe.linkSystemLibrary("shlwapi");
+    exe.linkSystemLibrary("shell32");
 
     if (target.result.abi == .msvc) {
         exe.linkLibC();
