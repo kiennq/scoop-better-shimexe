@@ -62,11 +62,9 @@ jobs:
       matrix:
         include:
           - arch: x86
-            target: x86-windows-gnu
-            exe_name: shim-ia32.exe
+            target: x86-windows-msvc
           - arch: arm64
-            target: aarch64-windows-gnu
-            exe_name: shim-aarch64.exe
+            target: aarch64-windows-msvc
     defaults:
       run:
         shell: pwsh
@@ -83,20 +81,19 @@ jobs:
         working-directory: build
         run: |
           zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSmall
-          Rename-Item -Path "zig-out/bin/shim.exe" -NewName "${{ matrix.exe_name }}"
 
       - name: Generate checksums
         working-directory: build/zig-out/bin
         run: |
-          $sha256 = (Get-FileHash "${{ matrix.exe_name }}" -Algorithm SHA256).Hash.ToLower()
-          "$sha256  ${{ matrix.exe_name }}" | Out-File -Encoding ascii "${{ matrix.exe_name }}.sha256"
-          $sha512 = (Get-FileHash "${{ matrix.exe_name }}" -Algorithm SHA512).Hash.ToLower()
-          "$sha512  ${{ matrix.exe_name }}" | Out-File -Encoding ascii "${{ matrix.exe_name }}.sha512"
+          $sha256 = (Get-FileHash "shim.exe" -Algorithm SHA256).Hash.ToLower()
+          "$sha256  shim.exe" | Out-File -Encoding ascii "checksum.sha256"
+          $sha512 = (Get-FileHash "shim.exe" -Algorithm SHA512).Hash.ToLower()
+          "$sha512  shim.exe" | Out-File -Encoding ascii "checksum.sha512"
 
       - name: Create zip
         working-directory: build/zig-out/bin
         run: |
-          Compress-Archive -Path "${{ matrix.exe_name }}", "${{ matrix.exe_name }}.sha256", "${{ matrix.exe_name }}.sha512" -DestinationPath "shimexe-${{ matrix.arch }}.zip"
+          Compress-Archive -Path "shim.exe", "checksum.sha256", "checksum.sha512" -DestinationPath "shimexe-${{ matrix.arch }}.zip"
 
       - name: Publish to release
         uses: ncipollo/release-action@v1

@@ -1,16 +1,23 @@
+// SPDX-License-Identifier: MIT
+// Optimized shim for scoop - C++20
+
 #ifdef _MSC_VER
 #include <corecrt_wstdio.h>
 #endif
+#pragma comment(lib, "SHELL32.LIB")
 #pragma comment(lib, "SHLWAPI.LIB")
+
 #include <windows.h>
 #include <shlwapi.h>
-#include <stdio.h>
 
+#include <algorithm>
+#include <array>
+#include <cstdlib>
+#include <cstring>
+#include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
-#include <tuple>
-#include <optional>
-#include <memory>
 #include <vector>
 
 #ifndef ERROR_ELEVATION_REQUIRED
@@ -19,277 +26,405 @@
 
 using namespace std::string_view_literals;
 
-BOOL WINAPI CtrlHandler(DWORD ctrlType)
+// Console control handler - must be a regular function with WINAPI calling convention
+BOOL WINAPI CtrlHandler(DWORD /*ctrlType*/) noexcept
 {
-    switch (ctrlType)
-    {
-    // Ignore all events, and let the child process
-    // handle them.
-    case CTRL_C_EVENT:
-    case CTRL_CLOSE_EVENT:
-    case CTRL_LOGOFF_EVENT:
-    case CTRL_BREAK_EVENT:
-    case CTRL_SHUTDOWN_EVENT:
-        return TRUE;
-
-    default:
-        return FALSE;
-    }
+    // Ignore all signals, let child process handle them
+    return TRUE;
 }
 
+namespace {
+
+// Compile-time constants
+constexpr std::wstring_view c_dirPlaceholder = L"%~dp0"sv;
+constexpr std::wstring_view c_pathPrefix = L"path"sv;
+constexpr std::wstring_view c_argsPrefix = L"args"sv;
+constexpr std::wstring_view c_separator = L" = "sv;
+constexpr wchar_t c_envDelim = L'%';
+
+// Environment variable storage
+using EnvVarList = std::vector<std::pair<std::wstring, std::wstring>>;
+
+// RAII handle wrapper with minimal overhead
 struct HandleDeleter
 {
-    typedef HANDLE pointer;
-    void operator() (HANDLE handle)
+    using pointer = HANDLE;
+    void operator()(HANDLE h) const noexcept
     {
-        if (handle)
+        if (h && h != INVALID_HANDLE_VALUE)
         {
-            CloseHandle(handle);
+            CloseHandle(h);
         }
     }
 };
+using UniqueHandle = std::unique_ptr<HANDLE, HandleDeleter>;
 
-namespace std
+// RAII file wrapper
+struct FileDeleter
 {
-    typedef unique_ptr<HANDLE, HandleDeleter> unique_handle;
-    typedef optional<wstring> wstring_p;
-}
+    void operator()(FILE* fp) const noexcept
+    {
+        if (fp)
+        {
+            fclose(fp);
+        }
+    }
+};
+using UniqueFile = std::unique_ptr<FILE, FileDeleter>;
 
 struct ShimInfo
 {
-    std::wstring_p path;
-    std::wstring_p args;
+    std::optional<std::wstring> path;
+    std::optional<std::wstring> args;
+    EnvVarList envVars;
 };
 
-std::wstring_view GetDirectory(std::wstring_view exe)
+struct ProcessResult
 {
-    auto pos = exe.find_last_of(L"\\/");
-    return exe.substr(0, pos);
+    UniqueHandle process;
+    UniqueHandle thread;
+};
+
+// Fast error output - avoids stdio buffering overhead
+inline void WriteError(const char* msg) noexcept
+{
+    HANDLE hErr = GetStdHandle(STD_ERROR_HANDLE);
+    if (hErr != INVALID_HANDLE_VALUE)
+    {
+        DWORD written;
+        WriteFile(hErr, msg, static_cast<DWORD>(strlen(msg)), &written, nullptr);
+    }
 }
 
-std::wstring_p NormalizeArgs(std::wstring_p& args, std::wstring_view curDir)
+inline void WriteErrorW(const wchar_t* msg) noexcept
 {
-    static constexpr auto s_dirPlaceHolder = L"%~dp0"sv;
-    if (!args)
+    HANDLE hErr = GetStdHandle(STD_ERROR_HANDLE);
+    if (hErr != INVALID_HANDLE_VALUE)
     {
-        return args;
+        DWORD written;
+        WriteConsoleW(hErr, msg, static_cast<DWORD>(wcslen(msg)), &written, nullptr);
     }
-
-    auto pos = args->find(s_dirPlaceHolder);
-    if (pos != std::wstring::npos)
-    {
-        args->replace(pos, s_dirPlaceHolder.size(), curDir.data(), curDir.size());
-    }
-
-    return args;
 }
 
-ShimInfo GetShimInfo()
+[[nodiscard]] constexpr std::wstring_view GetDirectory(std::wstring_view exe) noexcept
 {
-    // Find filename of current executable.
-    wchar_t filename[MAX_PATH + 2];
-    const auto filenameSize = GetModuleFileNameW(nullptr, filename, MAX_PATH);
-
-    if (filenameSize >= MAX_PATH)
+    if (auto pos = exe.find_last_of(L"\\/"); pos != std::wstring_view::npos)
     {
-        fprintf(stderr, "Shim: The filename of the program is too long to handle.\n");
-        return {std::nullopt, std::nullopt};
+        return exe.substr(0, pos);
     }
+    return exe;
+}
 
-    // Use filename of current executable to find .shim
-    wmemcpy(filename + filenameSize - 3, L"shim", 4U);
-    filename[filenameSize + 1] = L'\0';
-    FILE* fp = nullptr;
-
-    if (_wfopen_s(&fp, filename, L"r,ccs=UTF-8") != 0)
+// Trim trailing newline efficiently
+[[nodiscard]] constexpr std::wstring_view TrimNewline(std::wstring_view sv) noexcept
+{
+    if (!sv.empty() && sv.back() == L'\n')
     {
-        fprintf(stderr, "Cannot open shim file for read.\n");
-        return {std::nullopt, std::nullopt};
+        sv.remove_suffix(1);
     }
-
-    std::unique_ptr<FILE, decltype(&fclose)> shimFile(fp, &fclose);
-
-    // Read shim
-    wchar_t linebuf[1<<14];
-    std::wstring_p path;
-    std::wstring_p args;
-    while (true)
+    if (!sv.empty() && sv.back() == L'\r')
     {
-        if (!fgetws(linebuf, ARRAYSIZE(linebuf), shimFile.get()))
+        sv.remove_suffix(1);
+    }
+    return sv;
+}
+
+void NormalizeArgsInPlace(std::wstring& args, std::wstring_view curDir)
+{
+    if (auto pos = args.find(c_dirPlaceholder); pos != std::wstring::npos) [[unlikely]]
+    {
+        args.replace(pos, c_dirPlaceholder.size(), curDir);
+    }
+}
+
+// Expand %ENV_VAR% references in a string using Windows environment variables
+[[nodiscard]] std::wstring ExpandEnvVars(std::wstring_view input)
+{
+    std::wstring result(input);
+    size_t searchPos = 0;
+
+    while (searchPos < result.size())
+    {
+        auto startPos = result.find(c_envDelim, searchPos);
+        if (startPos == std::wstring::npos || startPos + 1 >= result.size())
         {
             break;
         }
 
-        std::wstring_view line(linebuf);
+        auto endPos = result.find(c_envDelim, startPos + 1);
+        if (endPos == std::wstring::npos)
+        {
+            break;
+        }
 
-        if ((line.size() < 7) || (line.substr(4, 3) != L" = "))
+        // Extract variable name between % delimiters
+        std::wstring varName = result.substr(startPos + 1, endPos - startPos - 1);
+        if (varName.empty())
+        {
+            // %% -> skip
+            searchPos = endPos + 1;
+            continue;
+        }
+
+        // Get environment variable value
+        wchar_t* envValue = nullptr;
+        size_t envLen = 0;
+        std::wstring replacement;
+
+        if (_wdupenv_s(&envValue, &envLen, varName.c_str()) == 0 && envValue)
+        {
+            replacement = envValue;
+            free(envValue);
+        }
+        // If env var not found, leave the placeholder as-is (replacement stays empty means remove it)
+        // Actually, we should leave it unchanged if not found for safety
+        else
+        {
+            searchPos = endPos + 1;
+            continue;
+        }
+
+        result.replace(startPos, endPos - startPos + 1, replacement);
+        searchPos = startPos + replacement.size();
+    }
+
+    return result;
+}
+
+[[nodiscard]] ShimInfo GetShimInfo()
+{
+    // Get filename of current executable
+    std::array<wchar_t, MAX_PATH + 2> filename {};
+    const auto filenameSize = GetModuleFileNameW(nullptr, filename.data(), MAX_PATH);
+
+    if (filenameSize >= MAX_PATH) [[unlikely]]
+    {
+        WriteError("Shim: The filename of the program is too long to handle.\n");
+        return {};
+    }
+
+    // Replace .exe with .shim
+    std::wmemcpy(filename.data() + filenameSize - 3, L"shim", 4);
+    filename[filenameSize + 1] = L'\0';
+
+    FILE* fp = nullptr;
+    if (_wfopen_s(&fp, filename.data(), L"r,ccs=UTF-8") != 0) [[unlikely]]
+    {
+        WriteError("Cannot open shim file for read.\n");
+        return {};
+    }
+    UniqueFile shimFile(fp);
+
+    // Parse shim file
+    std::array<wchar_t, 1 << 14> linebuf {};
+    ShimInfo info;
+    const std::wstring_view curDir = GetDirectory({filename.data(), filenameSize});
+
+    while (std::fgetws(linebuf.data(), static_cast<int>(linebuf.size()), shimFile.get()))
+    {
+        std::wstring_view line(linebuf.data());
+        line = TrimNewline(line);
+
+        // Find " = " separator anywhere in the line
+        auto sepPos = line.find(c_separator);
+        if (sepPos == std::wstring_view::npos) [[unlikely]]
         {
             continue;
         }
 
-        if (line.substr(0, 4) == L"path")
+        const auto name = line.substr(0, sepPos);
+        const auto value = line.substr(sepPos + c_separator.size());
+
+        if (name.empty()) [[unlikely]]
         {
-            std::wstring_view line_substr = line.substr(7);
-            if (line_substr.find(L" ") != std::wstring_view::npos && line_substr.front() != L'"')
+            continue;
+        }
+
+        if (name == c_pathPrefix)
+        {
+            // Expand environment variables in path
+            std::wstring expandedPath = ExpandEnvVars(value);
+
+            // Quote path if it contains spaces and isn't already quoted
+            if (expandedPath.find(L' ') != std::wstring::npos && (expandedPath.empty() || expandedPath.front() != L'"')) [[unlikely]]
             {
-                path.emplace(L"\"");
-                auto& path_value = path.value();
-                path_value.append(line_substr.data(), line_substr.size() - (line.back() == L'\n' ? 1 : 0));
-                path_value.push_back(L'"');
+                info.path.emplace();
+                auto& path = *info.path;
+                path.reserve(expandedPath.size() + 2);
+                path = L'"';
+                path.append(expandedPath);
+                path += L'"';
             }
             else
             {
-                path.emplace(line_substr.data(), line_substr.size() - (line.back() == L'\n' ? 1 : 0));
+                info.path = std::move(expandedPath);
             }
-
-            continue;
         }
-
-        if (line.substr(0, 4) == L"args")
+        else if (name == c_argsPrefix)
         {
-            args.emplace(line.data() + 7, line.size() - 7 - (line.back() == L'\n' ? 1 : 0));
-            continue;
+            info.args.emplace(value);
+            NormalizeArgsInPlace(*info.args, curDir);
+        }
+        else
+        {
+            // Treat as environment variable to set before launching
+            info.envVars.emplace_back(std::wstring(name), ExpandEnvVars(value));
         }
     }
 
-    return {path, NormalizeArgs(args, GetDirectory(filename))};
+    return info;
 }
 
-std::tuple<std::unique_handle, std::unique_handle> MakeProcess(ShimInfo const& info)
+[[nodiscard]] ProcessResult MakeProcess(const ShimInfo& info)
 {
-    // Start subprocess
-    STARTUPINFOW si = {};
-    PROCESS_INFORMATION pi = {};
+    ProcessResult result;
 
-    auto&& [path, args] = info;
-    std::vector<wchar_t> cmd(path->size() + args->size() + 2);
-    wmemcpy(cmd.data(), path->c_str(), path->size());
-    cmd[path->size()] = L' ';
-    wmemcpy(cmd.data() + path->size() + 1, args->c_str(), args->size());
-    cmd[path->size() + 1 + args->size()] = L'\0';
+    if (!info.path) [[unlikely]]
+    {
+        return result;
+    }
 
-    std::unique_handle threadHandle;
-    std::unique_handle processHandle;
+    // Set environment variables before creating process
+    for (const auto& [name, value] : info.envVars)
+    {
+        if (_wputenv_s(name.c_str(), value.c_str()) != 0) [[unlikely]]
+        {
+            WriteError("Shim: Could not set environment variable '");
+            WriteErrorW(name.c_str());
+            WriteError("'.\n");
+        }
+    }
 
+    const auto& path = *info.path;
+    const auto& args = info.args ? *info.args : std::wstring {};
+
+    // Build command line: path + space + args
+    std::wstring cmd;
+    cmd.reserve(path.size() + 1 + args.size());
+    cmd = path;
+    cmd += L' ';
+    cmd += args;
+
+    STARTUPINFOW si {};
+    si.cb = sizeof(si);
     GetStartupInfoW(&si);
 
-    if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_SUSPENDED, nullptr, nullptr, &si, &pi))
-    {
-        threadHandle.reset(pi.hThread);
-        processHandle.reset(pi.hProcess);
+    PROCESS_INFORMATION pi {};
 
-        ResumeThread(threadHandle.get());
+    if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_SUSPENDED, nullptr, nullptr, &si, &pi)) [[likely]]
+    {
+        result.thread.reset(pi.hThread);
+        result.process.reset(pi.hProcess);
+        ResumeThread(result.thread.get());
     }
     else
     {
-        if (GetLastError() == ERROR_ELEVATION_REQUIRED)
+        // Handle creation failure
+        const DWORD err = GetLastError();
+        if (err == ERROR_ELEVATION_REQUIRED)
         {
-            // We must elevate the process, which is (basically) impossible with
-            // CreateProcess, and therefore we fallback to ShellExecuteEx,
-            // which CAN create elevated processes, at the cost of opening a new separate
-            // window.
-            // Theorically, this could be fixed (or rather, worked around) using pipes
-            // and IPC, but... this is a question for another day.
-            SHELLEXECUTEINFOW sei = {};
-
-            sei.cbSize = sizeof(SHELLEXECUTEINFOW);
+            // Fallback to ShellExecuteEx for elevation
+            SHELLEXECUTEINFOW sei {};
+            sei.cbSize = sizeof(sei);
             sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-            sei.lpFile = path->c_str();
-            sei.lpParameters = args->c_str();
+            sei.lpFile = path.c_str();
+            sei.lpParameters = args.c_str();
             sei.nShow = SW_SHOW;
 
             if (!ShellExecuteExW(&sei))
             {
-                fprintf(stderr, "Shim: Unable to create elevated process: error %li.", GetLastError());
-                return {std::move(processHandle), std::move(threadHandle)};
+                WriteError("Shim: Unable to create elevated process.\n");
+                return result;
             }
-
-            processHandle.reset(sei.hProcess);
+            result.process.reset(sei.hProcess);
         }
         else
         {
-            fprintf(stderr, "Shim: Could not create process with command '%ls'.\n", cmd.data());
-            return {std::move(processHandle), std::move(threadHandle)};
+            WriteError("Shim: Could not create process with command '");
+            WriteErrorW(cmd.c_str());
+            WriteError("'.\n");
+            return result;
         }
     }
 
-    // Ignore Ctrl-C and other signals
-    if (!SetConsoleCtrlHandler(CtrlHandler, TRUE))
-    {
-        fprintf(stderr, "Shim: Could not set control handler; Ctrl-C behavior may be invalid.\n");
-    }
+    // Ignore Ctrl-C and other signals - let child handle them
+    SetConsoleCtrlHandler(CtrlHandler, TRUE);
 
-    return {std::move(processHandle), std::move(threadHandle)};
+    return result;
 }
+
+} // anonymous namespace
 
 int wmain(int argc, wchar_t* argv[])
 {
-    auto [path, args] = GetShimInfo();
+    auto info = GetShimInfo();
 
-    if (!path)
+    if (!info.path) [[unlikely]]
     {
-        fprintf(stderr, "Could not read shim file.\n");
+        WriteError("Could not read shim file.\n");
         return 1;
     }
 
-    if (!args)
+    if (!info.args)
     {
-        args.emplace();
+        info.args.emplace();
     }
 
-    auto cmd = GetCommandLineW();
-    if (cmd[0] == L'\"')
+    // Append command line arguments
+    const wchar_t* cmd = GetCommandLineW();
+    const size_t argv0Len = wcslen(argv[0]);
+
+    if (cmd[0] == L'"')
     {
-        args->append(cmd + wcslen(argv[0]) + 2);
+        info.args->append(cmd + argv0Len + 2);
     }
     else
     {
-        args->append(cmd + wcslen(argv[0]));
+        info.args->append(cmd + argv0Len);
     }
 
-    // Find out if the target program is a console app
+    // Determine if target is a GUI app
+    std::array<wchar_t, MAX_PATH> unquotedPath {};
+    const size_t pathLen = (std::min)(info.path->length(), unquotedPath.size() - 1);
+    std::wmemcpy(unquotedPath.data(), info.path->c_str(), pathLen);
+    unquotedPath[pathLen] = L'\0';
+    PathUnquoteSpacesW(unquotedPath.data());
 
-    wchar_t unquotedPath[MAX_PATH] = {};
-    wmemcpy(unquotedPath, path->c_str(), path->length());
-    PathUnquoteSpacesW(unquotedPath);
-    SHFILEINFOW sfi = {};
-    const auto ret = SHGetFileInfoW(unquotedPath, -1, &sfi, sizeof(sfi), SHGFI_EXETYPE);
+    SHFILEINFOW sfi {};
+    const auto exeType = SHGetFileInfoW(unquotedPath.data(), 0, &sfi, sizeof(sfi), SHGFI_EXETYPE);
 
-    if (ret == 0)
+    if (exeType == 0) [[unlikely]]
     {
-        fprintf(stderr, "Shim: Could not determine if target is a GUI app. Assuming console.\n");
+        WriteError("Shim: Could not determine if target is a GUI app. Assuming console.\n");
     }
 
-    const auto isWindowsApp = HIWORD(ret) != 0;
-
-    if (isWindowsApp)
+    const bool isWindowsApp = HIWORD(exeType) != 0;
+    if (isWindowsApp) [[unlikely]]
     {
-        // Unfortunately, this technique will still show a window for a fraction of time,
-        // but there's just no workaround.
         FreeConsole();
     }
 
-    // Create job object, which can be attached to child processes
-    // to make sure they terminate when the parent terminates as well.
-    std::unique_handle jobHandle(CreateJobObject(nullptr, nullptr));
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli = {};
-
-    jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
-    SetInformationJobObject(jobHandle.get(), JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
-
-    auto [processHandle, threadHandle] = MakeProcess({path, args});
-    if (processHandle)
+    // Create job object to ensure child termination with parent
+    UniqueHandle jobHandle(CreateJobObjectW(nullptr, nullptr));
+    if (jobHandle) [[likely]]
     {
-        AssignProcessToJobObject(jobHandle.get(), processHandle.get());
-
-        // Wait till end of process
-        WaitForSingleObject(processHandle.get(), INFINITE);
-
-        DWORD exitCode = 0;
-        GetExitCodeProcess(processHandle.get(), &exitCode);
-
-        return exitCode;
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli {};
+        jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+        SetInformationJobObject(jobHandle.get(), JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
     }
 
-    return processHandle ? 0 : 1;
+    auto [processHandle, threadHandle] = MakeProcess(info);
+
+    if (!processHandle) [[unlikely]]
+    {
+        return 1;
+    }
+
+    AssignProcessToJobObject(jobHandle.get(), processHandle.get());
+    WaitForSingleObject(processHandle.get(), INFINITE);
+
+    DWORD exitCode = 1;
+    GetExitCodeProcess(processHandle.get(), &exitCode);
+
+    return static_cast<int>(exitCode);
 }

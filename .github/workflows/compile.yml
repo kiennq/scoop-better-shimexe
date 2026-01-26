@@ -10,10 +10,10 @@ jobs:
       matrix:
         include:
           - arch: x86
-            target: x86-windows-gnu
+            target: x86-windows-msvc
             can_run: true
           - arch: arm64
-            target: aarch64-windows-gnu
+            target: aarch64-windows-msvc
             can_run: false
     defaults:
       run:
