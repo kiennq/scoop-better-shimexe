@@ -12,8 +12,8 @@ const CrossTarget = std.Target.Query;
 //   aarch64-windows-gnu
 //   aarch64-windows-msvc
 
-const required_version = std.SemanticVersion.parse("0.13.0") catch unreachable;
-const compatible = builtin.zig_version.order(required_version) == .gt;
+const required_version = std.SemanticVersion.parse("0.15.0") catch unreachable;
+const compatible = builtin.zig_version.order(required_version) != .lt;
 
 pub fn build(b: *std.Build) void {
     if (!compatible) {
@@ -34,8 +34,10 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "shim",
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+        }),
         .win32_manifest = b.path("../shim.manifest"),
     });
 
