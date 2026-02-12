@@ -12,9 +12,15 @@ jobs:
           - arch: x86
             target: x86-windows-msvc
             can_run: true
-          - arch: arm64
+            optimize: ReleaseSmall
+          - arch: x86_64
+            target: x86_64-windows-msvc
+            optimize: ReleaseSmall
+            can_run: true
+          - arch: aarch64
             target: aarch64-windows-msvc
             can_run: false
+            optimize: ReleaseSmall
     defaults:
       run:
         shell: pwsh
@@ -25,11 +31,11 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.14.0
+          version: 0.15.0
 
       - name: Build (${{ matrix.arch }})
         working-directory: build
-        run: zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSmall
+        run: zig build -Dtarget=${{ matrix.target }} -Doptimize=${{ matrix.optimize }}
 
       - name: Verify artifact exists
         run: |

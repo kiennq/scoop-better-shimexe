@@ -8,7 +8,7 @@ on:
     branches:
       - main
     paths:
-      - 'version'
+      - "version"
 
 jobs:
   version:
@@ -63,8 +63,13 @@ jobs:
         include:
           - arch: x86
             target: x86-windows-msvc
-          - arch: arm64
+            optimize: ReleaseSmall
+          - arch: x86_64
+            target: x86_64-windows-msvc
+            optimize: ReleaseSmall
+          - arch: aarch64
             target: aarch64-windows-msvc
+            optimize: ReleaseSmall
     defaults:
       run:
         shell: pwsh
@@ -75,12 +80,12 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.14.0
+          version: 0.15.0
 
       - name: Build (${{ matrix.arch }})
         working-directory: build
         run: |
-          zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSmall
+          zig build -Dtarget=${{ matrix.target }} -Doptimize=${{ matrix.optimize }}
 
       - name: Generate checksums
         working-directory: build/zig-out/bin
