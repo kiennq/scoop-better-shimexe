@@ -11,6 +11,11 @@ const CrossTarget = std.Target.Query;
 //   x86_64-windows-msvc
 //   aarch64-windows-gnu
 //   aarch64-windows-msvc
+//Supported optimization levels:
+//   Debug
+//   ReleaseSafe
+//   ReleaseFast
+//   ReleaseSmall
 
 const required_version = std.SemanticVersion.parse("0.15.0") catch unreachable;
 const compatible = builtin.zig_version.order(required_version) != .lt;
@@ -50,7 +55,6 @@ pub fn build(b: *std.Build) void {
     } else {
         exe.linkLibCpp();
         exe.subsystem = .Console;
-        // NOTE: This requires a recent Zig version (0.12.0-dev.3493+3661133f9 or later)
         exe.mingw_unicode_entry_point = true;
     }
 
